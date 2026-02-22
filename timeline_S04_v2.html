@@ -141,12 +141,12 @@
         }
 
         .annotation-colour-bar.delete { background: #dc3545; }
-        .annotation-colour-bar.content { background: #007bff; }
+        .annotation-colour-bar.addition { background: #007bff; }
         .annotation-colour-bar.swap { background: #fd7e14; }
         .annotation-colour-bar.video { background: #6f42c1; }
         .annotation-colour-bar.audio { background: #20c997; }
         .annotation-colour-bar.text { background: #e83e8c; }
-        
+        .annotation-colour-bar.general { background: #6c757d; }
 
         .annotation-content {
             flex: 1;
@@ -374,13 +374,17 @@
             z-index: 35;
         }
 
+        /* DEBUG: thick red border to see #timelineBar boundaries - remove when done */
+        #timelineBar {
+            border: 4px solid red !important;
+        }
         .timeline-bar {
             box-sizing: border-box;
             height: 60px;
             min-width: 0;
             max-width: none;
             background: linear-gradient(to right, #e0e0e0, #f0f0f0);
-            border: 1px solid #bbb;
+            border: 2px solid #333;
             border-radius: 4px;
             position: relative;
             cursor: crosshair;
@@ -420,6 +424,10 @@
             border-right: 1px solid rgba(220, 53, 69, 0.3);
         }
 
+        /* DEBUG: thick blue border to see #timeMarkers boundaries - remove when done */
+        #timeMarkers {
+            border: 4px solid blue !important;
+        }
         .time-markers {
             position: relative;
             height: 30px;
@@ -655,34 +663,6 @@
             transform: translateX(-50%);
         }
 
-        .swap-insert-block {
-            position: absolute;
-            top: 4px;
-            height: 52px;
-            background: rgba(144, 238, 144, 0.55);
-            border: 1px solid #79c879;
-            z-index: 6;
-            pointer-events: none;
-        }
-
-        .export-bar {
-            display: flex;
-            gap: 8px;
-            margin-bottom: 10px;
-            flex-wrap: wrap;
-        }
-
-        .viewer-mode-badge {
-            font-size: 12px;
-            color: #0c5460;
-            background: #d1ecf1;
-            border: 1px solid #bee5eb;
-            border-radius: 4px;
-            padding: 4px 6px;
-            margin-bottom: 8px;
-            display: none;
-        }
-
         .deleted-zone:hover {
             width: 3px;
             background-color: #c82333;
@@ -868,62 +848,36 @@
 
         <div id="sidebar" class="right-column" style="display: none; flex-direction: column;">
             <div class="sidebar-header">
-                <div id="viewerModeBadge" class="viewer-mode-badge">Viewer Mode: you can only update Completed and Team Reply.</div>
                 <div class="sidebar-duration">
                     <span class="label">Original:</span><span id="sidebarOriginalDuration" class="value">00:00:00</span>
                     <span class="label">Current:</span><span id="sidebarCurrentDuration" class="value">00:00:00</span>
                 </div>
-                <div class="export-bar">
-                    <button onclick="exportViewerHtml()">Export HTML (Viewer)</button>
-                    <button onclick="exportTextSummary()">Export Text (All)</button>
-                    <button onclick="exportFilteredText()">Export Text (Current Filter)</button>
-                </div>
                 <div class="filter-bar">
                     <button class="filter-btn active" data-filter="all">All</button>
                     <button class="filter-btn" data-filter="delete">Delete</button>
+                    <button class="filter-btn" data-filter="addition">Addition</button>
                     <button class="filter-btn" data-filter="swap">Swap</button>
                     <button class="filter-btn" data-filter="video">Video</button>
                     <button class="filter-btn" data-filter="audio">Audio</button>
                     <button class="filter-btn" data-filter="text">Text & Graphics</button>
-                    <button class="filter-btn" data-filter="content">Content</button>
+                    <button class="filter-btn" data-filter="general">General</button>
                 </div>
             </div>
             <div id="sidebarList" class="sidebar-list"></div>
         </div>
     </div>
 
-    <!-- Range Annotation Popup -->
+    <!-- Delete Annotation Popup -->
     <div id="deletePopup" class="delete-popup">
-        <h3>Range Annotation</h3>
+        <h3>Delete Annotation</h3>
         <div class="timecode-display">
             <div>In: <span id="popupInTimecode"></span></div>
             <div>Out: <span id="popupOutTimecode"></span></div>
         </div>
-        <select id="rangeMode">
-            <option value="delete">Delete</option>
-            <option value="swap">Swap</option>
-        </select>
-        <div id="swapInsertTimeRow" style="display:none;margin:6px 0;font-size:13px;">Insert At: <span id="swapInsertTimecode"></span></div>
         <textarea id="deleteComment" placeholder="Enter comment..."></textarea>
         <div class="button-group">
             <button class="cancel-btn" onclick="closeDeletePopup()">Cancel</button>
-            <button class="save-btn" id="rangePrimaryBtn" onclick="saveDeleteAnnotation()">Save</button>
-        </div>
-    </div>
-
-    <div id="pointPopup" class="delete-popup">
-        <h3>Add Annotation</h3>
-        <div class="timecode-display">Timecode: <span id="pointTimecode"></span></div>
-        <select id="pointCategory">
-            <option value="video">Video</option>
-            <option value="audio">Audio</option>
-            <option value="text">Text & Graphics</option>
-            <option value="content">Content</option>
-        </select>
-        <textarea id="pointComment" placeholder="Enter comment (optional)..."></textarea>
-        <div class="button-group">
-            <button class="cancel-btn" onclick="closePointPopup()">Cancel</button>
-            <button class="save-btn" onclick="savePointAnnotation()">Save</button>
+            <button class="save-btn" onclick="saveDeleteAnnotation()">Save</button>
         </div>
     </div>
 
@@ -963,78 +917,907 @@
         };
 
         let segments = [];
+        let segmentCounter = 1;
         let deleteAnnotations = [];
         let isSelectingRange = false;
         let rangeStartX = 0;
         let rangeStartTime = 0;
         let currentRangeEndX = 0;
         let currentRangeEndTime = 0;
-        let state = { projectName: '', totalSeconds: 0, isExpanded: true, annotations: [] };
-        let ownerMode = true;
-        let autosaveIntervalId = null;
-        let pendingRangeData = null;
-        let pendingSwapData = null;
+
+        function parseDuration(durationStr) {
+            const parts = durationStr.split(':').map(Number);
+            if (parts.length !== 3 || parts.some(isNaN)) {
+                throw new Error('Invalid duration format. Use hh:mm:ss');
+            }
+            return parts[0] * 3600 + parts[1] * 60 + parts[2];
+        }
+
+        function formatTime(seconds) {
+            const h = Math.floor(seconds / 3600);
+            const m = Math.floor((seconds % 3600) / 60);
+            const s = seconds % 60;
+            return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+        }
+
+        function calculateMarkerInterval(totalSeconds) {
+            // Calculate appropriate interval based on total duration
+            // Aim for roughly 10-20 markers visible at a time
+            const pixelsPerSecond = 10; // Base scale: 10 pixels per second
+            const targetMarkers = 15;
+            const baseInterval = totalSeconds / targetMarkers;
+            
+            // Round to nice intervals: 1s, 5s, 10s, 30s, 1m, 5m, 10m, 30m, 1h
+            const intervals = [1, 5, 10, 30, 60, 300, 600, 1800, 3600];
+            for (let interval of intervals) {
+                if (interval >= baseInterval) {
+                    return interval;
+                }
+            }
+            return intervals[intervals.length - 1];
+        }
+
+        /** Set #timelineBar and #timeMarkers to the same pixel width in one place so they stay aligned. */
+        function setTimelineBarAndMarkersWidth(widthPx) {
+            const timelineBar = document.getElementById('timelineBar');
+            const timeMarkers = document.getElementById('timeMarkers');
+            if (timelineBar) timelineBar.style.width = widthPx + 'px';
+            if (timeMarkers) timeMarkers.style.width = widthPx + 'px';
+        }
+
+        function drawTimeline() {
+            const durationInput = document.getElementById('duration').value.trim();
+            const container = document.getElementById('timelineContainer');
+            const timelineBar = document.getElementById('timelineBar');
+            const timeMarkers = document.getElementById('timeMarkers');
+
+            if (!durationInput) {
+                alert('Please enter a duration');
+                return;
+            }
+
+            try {
+                const totalSeconds = parseDuration(durationInput);
+                if (totalSeconds <= 0) {
+                    alert('Duration must be greater than 0');
+                    return;
+                }
+
+                // Calculate scale: 10 pixels per second
+                const pixelsPerSecond = 10;
+                const totalWidth = totalSeconds * pixelsPerSecond;
+                const minWidth = 800; // Minimum width for short durations
+                const actualWidth = Math.max(totalWidth, minWidth);
+
+                setTimelineBarAndMarkersWidth(actualWidth);
+
+                // Store timeline data for mouse tracking
+                timelineData.totalSeconds = totalSeconds;
+                timelineData.actualWidth = actualWidth;
+
+                const scrollEl = document.getElementById('timelineScrollable');
+                // Setup mouse tracking (will be updated when view changes)
+                setupMouseTracking(timelineBar, container, scrollEl, totalSeconds, actualWidth);
+
+                // Setup segment markers
+                setupSegmentMarkers(timelineBar, totalSeconds, actualWidth);
+
+                // Setup auto-scrolling (scrollable element so overlay stays fixed)
+                setupAutoScroll(scrollEl);
+
+                // Reset segments when redrawing timeline
+                segments = [];
+                segmentCounter = 1;
+                document.getElementById('segmentMarkersContainer').innerHTML = '';
+
+                // Calculate marker interval; always create first at 00:00:00 and last at total duration
+                const markerInterval = calculateMarkerInterval(totalSeconds);
+
+                // Clear existing markers (width already set above via setTimelineBarAndMarkersWidth)
+                timeMarkers.innerHTML = '';
+
+                function appendMarker(time, leftPx, isFirst, isLast) {
+                    const marker = document.createElement('div');
+                    marker.className = 'marker' + (isFirst ? ' marker-first' : '') + (isLast ? ' marker-last' : '');
+                    marker.style.left = leftPx + 'px';
+                    marker.dataset.originalLeft = String(leftPx);
+                    const line = document.createElement('div');
+                    line.className = 'marker-line';
+                    const label = document.createElement('div');
+                    label.className = 'marker-label';
+                    label.textContent = formatTime(time);
+                    marker.appendChild(line);
+                    marker.appendChild(label);
+                    timeMarkers.appendChild(marker);
+                }
+
+                // 1) First marker: exactly 00:00:00 at left edge
+                appendMarker(0, 0, true, false);
+
+                // 2) Intermediate markers: strict interval steps between 0 and totalSeconds (exclusive of both ends)
+                for (let i = 1; i * markerInterval < totalSeconds; i++) {
+                    const time = i * markerInterval;
+                    const position = (time / totalSeconds) * actualWidth;
+                    appendMarker(time, position, false, false);
+                }
+
+                // 3) Last marker: exactly total duration at right edge (always, even if it equals last interval step)
+                appendMarker(totalSeconds, actualWidth, false, true);
+
+                setTimeout(function() {
+                    var bar = document.getElementById('timelineBar');
+                    var markers = document.getElementById('timeMarkers');
+                    console.log('[drawTimeline] after initial draw (before applyTimelineView): #timelineBar style.width=' + (bar ? bar.style.width : 'N/A') + ', offsetWidth=' + (bar ? bar.offsetWidth : 'N/A') + ' | #timeMarkers style.width=' + (markers ? markers.style.width : 'N/A') + ', offsetWidth=' + (markers ? markers.offsetWidth : 'N/A'));
+                }, 0);
+
+                // Reset delete annotations when redrawing
+                deleteAnnotations = [];
+                const deletedZonesContainer = document.getElementById('deletedZonesContainer');
+                deletedZonesContainer.innerHTML = '';
+                deletedZonesContainer.style.position = 'absolute';
+                deletedZonesContainer.style.top = '0';
+                deletedZonesContainer.style.left = '0';
+                deletedZonesContainer.style.width = actualWidth + 'px';
+                deletedZonesContainer.style.height = '60px';
+                deletedZonesContainer.style.pointerEvents = 'none';
+                document.getElementById('deletedChunksStrip').innerHTML = '';
+                
+                // Show container, controls, and sidebar
+                container.style.display = 'block';
+                document.getElementById('timelineViewControls').style.display = 'flex';
+                document.getElementById('sidebar').style.display = 'flex';
+                
+                // Initialize duration display in sidebar
+                updateDurationDisplay();
+                
+                // Setup range selection
+                setupRangeSelection(timelineBar, totalSeconds, actualWidth);
+                
+                // Apply current view mode
+                applyTimelineView();
+            } catch (error) {
+                alert(error.message);
+            }
+        }
+
+        function toggleTimelineView() {
+            timelineData.isExpanded = !timelineData.isExpanded;
+            applyTimelineView();
+        }
+
+        function applyTimelineView() {
+            const container = document.getElementById('timelineContainer');
+            const toggleBtn = document.getElementById('viewToggleBtn');
+            const timelineBar = document.getElementById('timelineBar');
+            const timeMarkers = document.getElementById('timeMarkers');
+            const segmentContainer = document.getElementById('segmentMarkersContainer');
+            const wrapper = document.querySelector('.timeline-wrapper');
+            
+            if (!timelineData.totalSeconds || !timelineData.actualWidth) {
+                return; // Timeline not drawn yet
+            }
+
+            if (timelineData.isExpanded) {
+                // Expanded view - use display width (collapsed to current duration when deletes exist)
+                container.classList.remove('collapsed');
+                toggleBtn.textContent = 'Overview';
+                toggleBtn.classList.remove('overview');
+                
+                const displayWidth = getDisplayWidth();
+                setTimelineBarAndMarkersWidth(displayWidth);
+                segmentContainer.style.width = displayWidth + 'px';
+                const deletedZonesContainer = document.getElementById('deletedZonesContainer');
+                if (deletedZonesContainer) deletedZonesContainer.style.width = displayWidth + 'px';
+                if (wrapper) wrapper.style.width = displayWidth + 'px';
+                
+                // Markers and segment positions are already correct after updateTimelineToCurrentDuration
+                const markers = timeMarkers.querySelectorAll('.marker');
+                markers.forEach(marker => {
+                    const originalLeft = parseFloat(marker.dataset.originalLeft || marker.style.left);
+                    marker.style.left = originalLeft + 'px';
+                });
+                repositionSegmentMarkersForDisplayWidth(displayWidth);
+                
+                const scrollEl = document.getElementById('timelineScrollable');
+                setupMouseTracking(timelineBar, container, scrollEl, timelineData.totalSeconds, displayWidth);
+                setupRangeSelection(timelineBar, timelineData.totalSeconds, displayWidth);
+                setupAutoScroll(scrollEl);
+                setTimeout(function() {
+                    var bar = document.getElementById('timelineBar');
+                    var markers = document.getElementById('timeMarkers');
+                    console.log('[Full View] #timelineBar computed width: style.width=' + (bar ? bar.style.width : 'N/A') + ', offsetWidth=' + (bar ? bar.offsetWidth : 'N/A') + ', getBoundingClientRect().width=' + (bar ? bar.getBoundingClientRect().width : 'N/A'));
+                    console.log('[Full View] #timeMarkers computed width: style.width=' + (markers ? markers.style.width : 'N/A') + ', offsetWidth=' + (markers ? markers.offsetWidth : 'N/A') + ', getBoundingClientRect().width=' + (markers ? markers.getBoundingClientRect().width : 'N/A'));
+                }, 0);
+            } else {
+                // Collapsed view - fit entire timeline to container width
+                container.classList.add('collapsed');
+                toggleBtn.textContent = 'Full View';
+                toggleBtn.classList.add('overview');
+                
+                const scrollElCollapsed = document.getElementById('timelineScrollable');
+                if (scrollElCollapsed) scrollElCollapsed.scrollLeft = 0;
+                
+                // Force a reflow to get accurate container width
+                container.style.display = 'block';
+                
+                // Get container width (accounting for padding: 20px on each side)
+                const containerRect = container.getBoundingClientRect();
+                const containerWidth = Math.max(100, containerRect.width - 40); // Subtract padding, min 100px
+                const displayWidth = getDisplayWidth();
+                
+                // Scale from current display width (collapsed duration) to container width
+                const scale = containerWidth / displayWidth;
+                
+                const scaledWidth = containerWidth;
+                setTimelineBarAndMarkersWidth(scaledWidth);
+                segmentContainer.style.width = scaledWidth + 'px';
+                document.getElementById('deletedZonesContainer').style.width = scaledWidth + 'px';
+                wrapper.style.width = scaledWidth + 'px';
+                
+                // Scale marker positions; keep first and last flush with bar edges
+                const markers = timeMarkers.querySelectorAll('.marker');
+                console.log('[Overview] scale=' + scale + ', scaledWidth=' + scaledWidth + ', marker count=' + markers.length);
+                markers.forEach((marker, idx) => {
+                    const originalLeft = parseFloat(marker.dataset.originalLeft || marker.style.left) || 0;
+                    if (!marker.dataset.originalLeft) marker.dataset.originalLeft = String(originalLeft);
+                    const isFirst = marker.classList.contains('marker-first');
+                    const isLast = marker.classList.contains('marker-last');
+                    const labelText = marker.querySelector('.marker-label') ? marker.querySelector('.marker-label').textContent : '?';
+                    let finalLeft;
+                    if (isFirst) { marker.style.left = '0px'; finalLeft = 0; }
+                    else if (isLast) { marker.style.left = scaledWidth + 'px'; finalLeft = scaledWidth; }
+                    else { finalLeft = originalLeft * scale; marker.style.left = finalLeft + 'px'; }
+                    console.log('[Overview] marker ' + idx + ': ' + labelText + ', marker-first=' + isFirst + ', marker-last=' + isLast + ', originalLeft=' + originalLeft + ', final left=' + finalLeft + 'px');
+                });
+                
+                // Scale segment marker positions (currently in 0..displayWidth from repositionSegmentMarkersForDisplayWidth)
+                const segmentMarkers = segmentContainer.querySelectorAll('.segment-marker');
+                segmentMarkers.forEach(marker => {
+                    const currentLeft = parseFloat(marker.style.left) || 0;
+                    marker.style.left = (currentLeft * scale) + 'px';
+                });
+                
+                // Disable auto-scroll in collapsed view
+                if (scrollElCollapsed && scrollElCollapsed._autoScrollMoveHandler) {
+                    scrollElCollapsed.removeEventListener('mousemove', scrollElCollapsed._autoScrollMoveHandler);
+                    scrollElCollapsed.removeEventListener('mouseleave', scrollElCollapsed._autoScrollLeaveHandler);
+                }
+                
+                setupMouseTracking(timelineBar, container, scrollElCollapsed, timelineData.totalSeconds, scaledWidth);
+                setTimeout(function() {
+                    var bar = document.getElementById('timelineBar');
+                    var markers = document.getElementById('timeMarkers');
+                    console.log('[Overview] #timelineBar computed width: style.width=' + (bar ? bar.style.width : 'N/A') + ', offsetWidth=' + (bar ? bar.offsetWidth : 'N/A') + ', getBoundingClientRect().width=' + (bar ? bar.getBoundingClientRect().width : 'N/A'));
+                    console.log('[Overview] #timeMarkers computed width: style.width=' + (markers ? markers.style.width : 'N/A') + ', offsetWidth=' + (markers ? markers.offsetWidth : 'N/A') + ', getBoundingClientRect().width=' + (markers ? markers.getBoundingClientRect().width : 'N/A'));
+                }, 0);
+            }
+            
+            if (timelineData.isExpanded) {
+                const scrollElExp = document.getElementById('timelineScrollable');
+                setupMouseTracking(timelineBar, container, scrollElExp, timelineData.totalSeconds, getDisplayWidth());
+            }
+            
+            // Re-render deleted zones and chunks for current view
+            renderDeletedZones();
+            renderDeletedChunks();
+        }
+
+        function setupMouseTracking(timelineBar, container, scrollEl, totalSeconds, timelineWidth) {
+            const cursorLine = document.getElementById('cursorLine');
+            const cursorTimecode = document.getElementById('cursorTimecode');
+            const overlayEl = document.getElementById('timelineCursorOverlay');
+            let lastMouseX = null;
+            let lastMouseY = null;
+            let cursorUpdateAnimationId = null;
+
+            // Remove existing listeners if they exist
+            if (timelineBar._mouseMoveHandler) {
+                timelineBar.removeEventListener('mousemove', timelineBar._mouseMoveHandler);
+                timelineBar.removeEventListener('mouseleave', timelineBar._mouseLeaveHandler);
+            }
+            if (container._cursorMoveHandler) {
+                container.removeEventListener('mousemove', container._cursorMoveHandler);
+                container.removeEventListener('mouseleave', container._cursorLeaveHandler);
+            }
+            if (scrollEl._cursorScrollHandler) {
+                scrollEl.removeEventListener('scroll', scrollEl._cursorScrollHandler);
+            }
+
+            // Function to update cursor position: viewport-relative position, then content (time) via scroll offset
+            function updateCursorPosition() {
+                if (isSelectingRange) {
+                    cursorLine.style.display = 'none';
+                    cursorTimecode.style.display = 'none';
+                    return;
+                }
+                if (lastMouseX === null || lastMouseY === null) {
+                    cursorLine.style.display = 'none';
+                    cursorTimecode.style.display = 'none';
+                    return;
+                }
+
+                const coords = getTimelineCoordsFromMouse(lastMouseX, lastMouseY);
+                if (!coords) {
+                    cursorLine.style.display = 'none';
+                    cursorTimecode.style.display = 'none';
+                    return;
+                }
+
+                const viewportRect = scrollEl.getBoundingClientRect();
+                const overlayRect = overlayEl.getBoundingClientRect();
+                const barRect = timelineBar.getBoundingClientRect();
+                const viewportXClamped = Math.max(0, Math.min(coords.viewportX, viewportRect.width));
+                const contentXClamped = Math.max(0, Math.min(coords.contentX, coords.timelineWidth));
+                const timeSeconds = compressedPixelToTime(contentXClamped, totalSeconds, coords.timelineWidth);
+                const timecode = formatTime(Math.floor(timeSeconds));
+
+                var lineTop = barRect.top - overlayRect.top;
+                var lineHeight = barRect.height;
+                cursorLine.style.top = lineTop + 'px';
+                cursorLine.style.height = lineHeight + 'px';
+                cursorLine.style.left = viewportXClamped + 'px';
+                cursorLine.style.display = 'block';
+
+                cursorTimecode.textContent = timecode;
+                cursorTimecode.style.display = 'block';
+                var labelWidth = cursorTimecode.offsetWidth;
+                var labelHeight = cursorTimecode.offsetHeight;
+                var halfLabel = labelWidth / 2;
+                var labelCenter = Math.max(halfLabel, Math.min(viewportRect.width - halfLabel, viewportXClamped));
+                var timecodeTop = Math.max(2, lineTop - labelHeight - 6);
+                cursorTimecode.style.left = labelCenter + 'px';
+                cursorTimecode.style.top = timecodeTop + 'px';
+                cursorTimecode.style.transform = 'translateX(-50%)';
+            }
+
+            // Continuous update function for smooth tracking during scroll
+            function continuousUpdate() {
+                updateCursorPosition();
+                cursorUpdateAnimationId = requestAnimationFrame(continuousUpdate);
+            }
+
+            // Track mouse on timeline bar
+            timelineBar._mouseMoveHandler = function(e) {
+                lastMouseX = e.clientX;
+                lastMouseY = e.clientY;
+                updateCursorPosition();
+            };
+
+            timelineBar._mouseLeaveHandler = function() {
+                lastMouseX = null;
+                lastMouseY = null;
+                cursorLine.style.display = 'none';
+                cursorTimecode.style.display = 'none';
+                if (cursorUpdateAnimationId) {
+                    cancelAnimationFrame(cursorUpdateAnimationId);
+                    cursorUpdateAnimationId = null;
+                }
+            };
+
+            // Track mouse on container so cursor updates at edges and during scroll
+            container._cursorMoveHandler = function(e) {
+                lastMouseX = e.clientX;
+                lastMouseY = e.clientY;
+                updateCursorPosition();
+                if (getTimelineCoordsFromMouse(lastMouseX, lastMouseY) && !cursorUpdateAnimationId) {
+                    continuousUpdate();
+                }
+            };
+
+            container._cursorLeaveHandler = function() {
+                lastMouseX = null;
+                lastMouseY = null;
+                cursorLine.style.display = 'none';
+                cursorTimecode.style.display = 'none';
+                if (cursorUpdateAnimationId) {
+                    cancelAnimationFrame(cursorUpdateAnimationId);
+                    cursorUpdateAnimationId = null;
+                }
+            };
+
+            // Update cursor position during scroll (scrollEl scrolls, overlay stays fixed)
+            scrollEl._cursorScrollHandler = function() {
+                if (lastMouseX !== null && lastMouseY !== null) {
+                    if (!cursorUpdateAnimationId) {
+                        continuousUpdate();
+                    }
+                }
+            };
+
+            // Add listeners
+            timelineBar.addEventListener('mousemove', timelineBar._mouseMoveHandler);
+            timelineBar.addEventListener('mouseleave', timelineBar._mouseLeaveHandler);
+            container.addEventListener('mousemove', container._cursorMoveHandler);
+            container.addEventListener('mouseleave', container._cursorLeaveHandler);
+            scrollEl.addEventListener('scroll', scrollEl._cursorScrollHandler);
+        }
+
+        function setupSegmentMarkers(timelineBar, totalSeconds, actualWidth) {
+            const segmentContainer = document.getElementById('segmentMarkersContainer');
+            segmentContainer.style.position = 'absolute';
+            segmentContainer.style.top = '0';
+            segmentContainer.style.left = '0';
+            segmentContainer.style.width = actualWidth + 'px';
+            segmentContainer.style.height = '60px';
+            segmentContainer.style.pointerEvents = 'none';
+
+            // Remove existing listeners if they exist
+            if (timelineBar._rightClickHandler) {
+                timelineBar.removeEventListener('contextmenu', timelineBar._rightClickHandler);
+            }
+
+            // Handle right-click to add segment
+            timelineBar._rightClickHandler = function(e) {
+                e.preventDefault();
+                const rect = timelineBar.getBoundingClientRect();
+                const x = e.clientX - rect.left;
+                const clampedX = Math.max(0, Math.min(x, actualWidth));
+                
+                // Calculate time at this position
+                const timeSeconds = (clampedX / actualWidth) * totalSeconds;
+                
+                // Generate segment name
+                const segmentName = `Seg ${String(segmentCounter).padStart(2, '0')}`;
+                
+                // Add segment
+                addSegmentMarker(clampedX, segmentName, timeSeconds, totalSeconds, actualWidth);
+                segmentCounter++;
+            };
+
+            timelineBar.addEventListener('contextmenu', timelineBar._rightClickHandler);
+        }
+
+        function addSegmentMarker(x, name, timeSeconds, totalSeconds, actualWidth) {
+            const segmentContainer = document.getElementById('segmentMarkersContainer');
+            
+            // Create segment marker element
+            const marker = document.createElement('div');
+            marker.className = 'segment-marker';
+            marker.style.left = x + 'px';
+            marker.dataset.x = x;
+            marker.dataset.name = name;
+            marker.dataset.timeSeconds = timeSeconds;
+            
+            // Create label
+            const label = document.createElement('div');
+            label.className = 'segment-label';
+            label.textContent = name;
+            marker.appendChild(label);
+            
+            // Add click handler to delete
+            marker.addEventListener('click', function(e) {
+                e.stopPropagation();
+                deleteSegmentMarker(marker);
+            });
+            
+            // Make marker clickable
+            marker.style.pointerEvents = 'auto';
+            
+            segmentContainer.appendChild(marker);
+            
+            // Store segment data
+            segments.push({
+                x: x,
+                name: name,
+                timeSeconds: timeSeconds,
+                element: marker
+            });
+        }
+
+        function deleteSegmentMarker(marker) {
+            const name = marker.dataset.name;
+            const index = segments.findIndex(seg => seg.element === marker);
+            
+            if (index !== -1) {
+                segments.splice(index, 1);
+                marker.remove();
+            }
+        }
+
+        function setupAutoScroll(container) {
+            const edgeZone = 60; // pixels from edge
+            let scrollAnimationId = null;
+            let isScrolling = false;
+
+            // Remove existing listeners if they exist
+            if (container._autoScrollMoveHandler) {
+                container.removeEventListener('mousemove', container._autoScrollMoveHandler);
+                container.removeEventListener('mouseleave', container._autoScrollLeaveHandler);
+            }
+
+            function calculateScrollSpeed(distanceFromEdge) {
+                // Speed increases as distance decreases (closer to edge = faster)
+                // Max speed when at edge (distance = 0), no speed at 60px
+                const normalizedDistance = Math.max(0, Math.min(1, distanceFromEdge / edgeZone));
+                const speed = (1 - normalizedDistance) * 15; // Max speed of 15 pixels per frame
+                return speed;
+            }
+
+            function startScrolling(direction) {
+                if (isScrolling) return;
+                isScrolling = true;
+
+                function scroll() {
+                    if (!isScrolling) {
+                        scrollAnimationId = null;
+                        return;
+                    }
+
+                    const currentScroll = container.scrollLeft;
+                    const maxScroll = container.scrollWidth - container.clientWidth;
+                    
+                    // Check if we can still scroll in this direction
+                    if (direction === 'left' && currentScroll > 0) {
+                        const rect = container.getBoundingClientRect();
+                        const mouseX = container._lastMouseX - rect.left;
+                        const distanceFromEdge = mouseX;
+                        
+                        if (distanceFromEdge < edgeZone) {
+                            const speed = calculateScrollSpeed(distanceFromEdge);
+                            container.scrollLeft = Math.max(0, currentScroll - speed);
+                            scrollAnimationId = requestAnimationFrame(scroll);
+                        } else {
+                            isScrolling = false;
+                            scrollAnimationId = null;
+                        }
+                    } else if (direction === 'right' && currentScroll < maxScroll) {
+                        const rect = container.getBoundingClientRect();
+                        const mouseX = container._lastMouseX - rect.left;
+                        const distanceFromEdge = container.clientWidth - mouseX;
+                        
+                        if (distanceFromEdge < edgeZone) {
+                            const speed = calculateScrollSpeed(distanceFromEdge);
+                            container.scrollLeft = Math.min(maxScroll, currentScroll + speed);
+                            scrollAnimationId = requestAnimationFrame(scroll);
+                        } else {
+                            isScrolling = false;
+                            scrollAnimationId = null;
+                        }
+                    } else {
+                        isScrolling = false;
+                        scrollAnimationId = null;
+                    }
+                }
+
+                scrollAnimationId = requestAnimationFrame(scroll);
+            }
+
+            function stopScrolling() {
+                isScrolling = false;
+                if (scrollAnimationId) {
+                    cancelAnimationFrame(scrollAnimationId);
+                    scrollAnimationId = null;
+                }
+            }
+
+            container._autoScrollMoveHandler = function(e) {
+                const rect = container.getBoundingClientRect();
+                const mouseX = e.clientX - rect.left;
+                container._lastMouseX = e.clientX;
+                
+                const distanceFromLeft = mouseX;
+                const distanceFromRight = container.clientWidth - mouseX;
+                
+                // Check if mouse is in edge zones
+                if (distanceFromLeft < edgeZone && distanceFromLeft >= 0) {
+                    // Near left edge - scroll left
+                    stopScrolling();
+                    startScrolling('left');
+                } else if (distanceFromRight < edgeZone && distanceFromRight >= 0) {
+                    // Near right edge - scroll right
+                    stopScrolling();
+                    startScrolling('right');
+                } else {
+                    // Not in edge zone - stop scrolling
+                    stopScrolling();
+                }
+            };
+
+            container._autoScrollLeaveHandler = function() {
+                stopScrolling();
+            };
+
+            container.addEventListener('mousemove', container._autoScrollMoveHandler);
+            container.addEventListener('mouseleave', container._autoScrollLeaveHandler);
+        }
+
+        function setupRangeSelection(timelineBar, totalSeconds, actualWidth) {
+            const rangeSelection = document.getElementById('rangeSelection');
+            const rangeStartTimecode = document.getElementById('rangeStartTimecode');
+            const rangeEndTimecode = document.getElementById('rangeEndTimecode');
+            const scrollEl = document.getElementById('timelineScrollable');
+            const overlayEl = document.getElementById('timelineCursorOverlay');
+            const rangeOverlayIn = document.getElementById('rangeOverlayIn');
+            const rangeOverlayOut = document.getElementById('rangeOverlayOut');
+
+            function hideOverlayRangeLabels() {
+                if (rangeOverlayIn) rangeOverlayIn.style.display = 'none';
+                if (rangeOverlayOut) rangeOverlayOut.style.display = 'none';
+            }
+
+            // Remove existing listeners (may be on scrollEl / document)
+            const oldDown = timelineBar._rangeMouseDown;
+            const oldMove = timelineBar._rangeMouseMove;
+            const oldUp = timelineBar._rangeMouseUp;
+            if (oldDown) {
+                timelineBar.removeEventListener('mousedown', oldDown);
+                scrollEl.removeEventListener('mousedown', oldDown);
+            }
+            if (oldMove) {
+                document.removeEventListener('mousemove', oldMove);
+            }
+            if (oldUp) {
+                document.removeEventListener('mouseup', oldUp);
+            }
+
+            timelineBar._rangeMouseDown = function(e) {
+                if (e.target.classList.contains('segment-marker') ||
+                    e.target.closest('.deleted-zone') ||
+                    e.target.closest('.deleted-chunk') ||
+                    e.target.dataset.deletedRegion === 'true' ||
+                    e.target.closest('[data-deleted-region="true"]')) {
+                    return;
+                }
+
+                const coords = getTimelineCoordsFromMouse(e.clientX, e.clientY);
+                if (!coords) return;
+
+                e.preventDefault();
+                e.stopPropagation();
+
+                const contentXClamped = Math.max(0, Math.min(coords.contentX, coords.timelineWidth));
+                rangeStartTime = compressedPixelToTime(contentXClamped, totalSeconds, coords.timelineWidth);
+
+                if (isTimeInDeletedRegion(rangeStartTime)) return;
+
+                rangeStartX = timeToCompressedPixel(rangeStartTime, totalSeconds, coords.timelineWidth);
+                isSelectingRange = true;
+                var barContainer = rangeSelection.closest('.timeline-bar-container');
+                if (barContainer) barContainer.classList.add('range-dragging');
+                if (scrollEl) scrollEl.classList.add('range-dragging');
+                if (overlayEl) overlayEl.classList.add('range-dragging');
+
+                rangeSelection.style.display = 'block';
+                rangeSelection.style.left = rangeStartX + 'px';
+                rangeSelection.style.width = '0px';
+                rangeStartTimecode.style.display = 'none';
+                rangeEndTimecode.style.display = 'none';
+                currentRangeEndTime = rangeStartTime;
+
+                var overlayRect = overlayEl.getBoundingClientRect();
+                var startOverlayX = e.clientX - overlayRect.left;
+                if (rangeOverlayIn) {
+                    rangeOverlayIn.style.display = 'block';
+                    rangeOverlayIn.style.left = startOverlayX + 'px';
+                    rangeOverlayIn.textContent = formatTime(Math.floor(rangeStartTime));
+                }
+                if (rangeOverlayOut) {
+                    rangeOverlayOut.style.display = 'block';
+                    rangeOverlayOut.style.left = startOverlayX + 'px';
+                    rangeOverlayOut.textContent = formatTime(Math.floor(rangeStartTime));
+                }
+                timelineBar._rangeStartOverlayX = startOverlayX;
+            };
+
+            timelineBar._rangeMouseMove = function(e) {
+                if (!isSelectingRange) return;
+
+                let coords = getTimelineCoordsFromMouse(e.clientX, e.clientY);
+                if (!coords) coords = getTimelineContentXFromClient(e.clientX);
+                if (!coords) return;
+
+                const contentXClamped = Math.max(0, Math.min(coords.contentX, coords.timelineWidth));
+                currentRangeEndTime = compressedPixelToTime(contentXClamped, totalSeconds, coords.timelineWidth);
+
+                const compressedStartX = timeToCompressedPixel(rangeStartTime, totalSeconds, coords.timelineWidth);
+                const compressedEndX = timeToCompressedPixel(currentRangeEndTime, totalSeconds, coords.timelineWidth);
+                const startX = Math.min(compressedStartX, compressedEndX);
+                const endX = Math.max(compressedStartX, compressedEndX);
+                const width = endX - startX;
+
+                rangeSelection.style.left = startX + 'px';
+                rangeSelection.style.width = width + 'px';
+
+                var overlayRect = overlayEl.getBoundingClientRect();
+                var outOverlayX = e.clientX - overlayRect.left;
+                if (rangeOverlayOut) {
+                    rangeOverlayOut.style.left = outOverlayX + 'px';
+                    rangeOverlayOut.textContent = formatTime(Math.floor(currentRangeEndTime));
+                }
+            };
+
+            timelineBar._rangeMouseUp = function(e) {
+                if (!isSelectingRange) return;
+                hideOverlayRangeLabels();
+                isSelectingRange = false;
+                var barContainer = rangeSelection.closest('.timeline-bar-container');
+                if (barContainer) barContainer.classList.remove('range-dragging');
+                if (scrollEl) scrollEl.classList.remove('range-dragging');
+                if (overlayEl) overlayEl.classList.remove('range-dragging');
+
+                // Use the already calculated times (they're in actual time, not compressed)
+                const inTime = Math.min(rangeStartTime, currentRangeEndTime);
+                const outTime = Math.max(rangeStartTime, currentRangeEndTime);
+
+                // Check if selection overlaps with deleted regions
+                const overlapsDeleted = deleteAnnotations.some(annotation => 
+                    (inTime >= annotation.inTime && inTime <= annotation.outTime) ||
+                    (outTime >= annotation.inTime && outTime <= annotation.outTime) ||
+                    (inTime <= annotation.inTime && outTime >= annotation.outTime)
+                );
+
+                if (overlapsDeleted) {
+                    if (barContainer) barContainer.classList.remove('range-dragging');
+                    if (scrollEl) scrollEl.classList.remove('range-dragging');
+                    if (overlayEl) overlayEl.classList.remove('range-dragging');
+                    rangeSelection.style.display = 'none';
+                    rangeStartTimecode.style.display = 'none';
+                    rangeEndTimecode.style.display = 'none';
+                    return;
+                }
+
+                if (Math.abs(outTime - inTime) < 0.1) {
+                    if (barContainer) barContainer.classList.remove('range-dragging');
+                    if (scrollEl) scrollEl.classList.remove('range-dragging');
+                    if (overlayEl) overlayEl.classList.remove('range-dragging');
+                    rangeSelection.style.display = 'none';
+                    rangeStartTimecode.style.display = 'none';
+                    rangeEndTimecode.style.display = 'none';
+                    return;
+                }
+
+                // Show delete popup
+                showDeletePopup(inTime, outTime);
+            };
+
+            // Attach mousedown to scroll area so clicks work when scrolled (anywhere in timeline area)
+            scrollEl.addEventListener('mousedown', timelineBar._rangeMouseDown);
+            // Attach move/up to document so drag works even when cursor leaves the bar
+            document.addEventListener('mousemove', timelineBar._rangeMouseMove);
+            document.addEventListener('mouseup', timelineBar._rangeMouseUp);
+        }
+
+        function showDeletePopup(inTime, outTime) {
+            const popup = document.getElementById('deletePopup');
+            document.getElementById('popupInTimecode').textContent = formatTime(Math.floor(inTime));
+            document.getElementById('popupOutTimecode').textContent = formatTime(Math.floor(outTime));
+            document.getElementById('deleteComment').value = '';
+            popup.style.display = 'block';
+        }
+
+        function closeDeletePopup() {
+            document.getElementById('deletePopup').style.display = 'none';
+            document.getElementById('rangeSelection').style.display = 'none';
+            document.getElementById('rangeStartTimecode').style.display = 'none';
+            document.getElementById('rangeEndTimecode').style.display = 'none';
+        }
+
+        function saveDeleteAnnotation() {
+            const comment = document.getElementById('deleteComment').value.trim();
+            const inTimecode = document.getElementById('popupInTimecode').textContent;
+            const outTimecode = document.getElementById('popupOutTimecode').textContent;
+            
+            const inTime = parseTimecode(inTimecode);
+            const outTime = parseTimecode(outTimecode);
+
+            const annotation = {
+                id: Date.now(),
+                type: 'delete',
+                inTime: inTime,
+                outTime: outTime,
+                inTimecode: inTimecode,
+                outTimecode: outTimecode,
+                comment: comment || '',
+                completed: false,
+                teamReply: '',
+                segmentName: getSegmentNameForTime(inTime)
+            };
+
+            deleteAnnotations.push(annotation);
+            deleteAnnotations.sort((a, b) => a.inTime - b.inTime);
+
+            updateTimelineToCurrentDuration();
+            updateDurationDisplay();
+            renderSidebar();
+            closeDeletePopup();
+        }
+
+        function parseTimecode(timecode) {
+            const parts = timecode.split(':').map(Number);
+            return parts[0] * 3600 + parts[1] * 60 + parts[2];
+        }
+
+        function getSegmentNameForTime(timeSeconds) {
+            const sorted = segments.slice().sort((a, b) => a.timeSeconds - b.timeSeconds);
+            let name = 'Full timeline';
+            for (const seg of sorted) {
+                if (timeSeconds >= seg.timeSeconds) name = seg.name;
+            }
+            return name;
+        }
+
         let annotationFilter = 'all';
-
-        function getDeleteAnnotations() { return state.annotations.filter(a => a.type === 'delete'); }
-        function syncDeleteAnnotations() { deleteAnnotations = getDeleteAnnotations(); }
-        function saveState() {
-            if (!ownerMode) return;
-            state.totalSeconds = timelineData.totalSeconds;
-            state.isExpanded = timelineData.isExpanded;
-            localStorage.setItem('timeline_owner_state_v4', JSON.stringify(state));
-        }
-        function scheduleAutoSave() { if (!autosaveIntervalId) autosaveIntervalId = setInterval(saveState, 60000); }
-        function markStateMutation() { syncDeleteAnnotations(); saveState(); }
-        function loadState() {
-            const raw = localStorage.getItem('timeline_owner_state_v4');
-            if (!raw) return;
-            try { const loaded = JSON.parse(raw); state = Object.assign(state, loaded || {}); state.annotations = Array.isArray(state.annotations) ? state.annotations : []; syncDeleteAnnotations(); }
-            catch (e) { console.warn('Failed to load state', e); }
-        }
-        function getFilteredAnnotations() {
-            const sorted = [...state.annotations].sort((a, b) => ((a.inTime ?? a.atTime ?? 0) - (b.inTime ?? b.atTime ?? 0)));
-            if (annotationFilter === 'all') return sorted;
-            return sorted.filter(a => a.type === annotationFilter);
-        }
-
-        function formatAnnotationTime(ann) {
-            if (ann.type === 'delete') return `${ann.inTimecode} – ${ann.outTimecode}`;
-            if (ann.type === 'swap') return `${ann.inTimecode} – ${ann.outTimecode} -> @ ${ann.insertAtTimecode || ''}`;
-            return `AT ${ann.atTimecode}`;
-        }
 
         function renderSidebar() {
             const listEl = document.getElementById('sidebarList');
             listEl.innerHTML = '';
-            getFilteredAnnotations().forEach(ann => {
-                const typeLabelMap = { delete: 'Delete', swap: 'Swap', video: 'Video', audio: 'Audio', text: 'Text & Graphics', content: 'Content' };
-                const row = document.createElement('div');
-                row.className = 'annotation-row' + (ann.completed ? ' completed' : '');
-                row.dataset.annotationId = ann.id;
-                row.innerHTML = `
-                    <div class="annotation-colour-bar ${ann.type}"></div>
-                    <div class="annotation-content">
-                        <div class="annotation-top-line">
-                            <span class="annotation-timecode">${formatAnnotationTime(ann)}</span>
-                            <span class="annotation-type">${typeLabelMap[ann.type] || ann.type}</span>
+
+            const filtered = deleteAnnotations.filter(a => {
+                if (annotationFilter === 'all') return true;
+                return a.type === annotationFilter;
+            });
+
+            const bySegment = {};
+            filtered.forEach(ann => {
+                const seg = ann.segmentName || 'Full timeline';
+                if (!bySegment[seg]) bySegment[seg] = [];
+                bySegment[seg].push(ann);
+            });
+
+            const segmentOrder = [...new Set(filtered.map(a => a.segmentName || 'Full timeline'))];
+            const sortedSegments = segmentOrder.sort((a, b) => {
+                const firstA = bySegment[a][0];
+                const firstB = bySegment[b][0];
+                return (firstA?.inTime ?? 0) - (firstB?.inTime ?? 0);
+            });
+
+            sortedSegments.forEach(segName => {
+                const divider = document.createElement('div');
+                divider.className = 'segment-divider';
+                divider.textContent = segName;
+                listEl.appendChild(divider);
+
+                (bySegment[segName] || []).sort((a, b) => a.inTime - b.inTime).forEach(ann => {
+                    if (!ann.segmentName) ann.segmentName = getSegmentNameForTime(ann.inTime);
+                    const row = document.createElement('div');
+                    row.className = 'annotation-row' + (ann.completed ? ' completed' : '');
+                    row.dataset.annotationId = ann.id;
+                    const typeLabel = (ann.type || 'delete') === 'delete' ? 'Delete' : (ann.type || 'Delete').charAt(0).toUpperCase() + (ann.type || 'delete').slice(1);
+                    row.innerHTML = `
+                        <div class="annotation-colour-bar ${ann.type || 'delete'}"></div>
+                        <div class="annotation-content">
+                            <div class="annotation-top-line">
+                                <span class="annotation-timecode">${ann.inTimecode} – ${ann.outTimecode}</span>
+                                <span class="annotation-type">${typeLabel}</span>
+                                <span class="annotation-segment">${ann.segmentName || '—'}</span>
+                                ${ann.teamReply ? '<span class="reply-icon" title="Team reply">💬</span>' : ''}
+                            </div>
+                            <div class="annotation-comment">${escapeHtml(ann.comment || '')}</div>
+                            <div class="annotation-reply-block" id="reply-${ann.id}">${escapeHtml(ann.teamReply || '')}</div>
+                            <div class="annotation-controls">
+                                <button class="edit-btn" type="button">Edit</button>
+                                <button class="remove-btn" type="button">Remove</button>
+                                <label><input type="checkbox" class="completed-cb" ${ann.completed ? 'checked' : ''}> Completed</label>
+                                ${ann.completed ? '<span class="completed-check">✓</span>' : ''}
+                            </div>
                         </div>
-                        <div class="annotation-comment">${escapeHtml(ann.comment || '')}</div>
-                        <div class="annotation-reply-block ${ann.teamReply ? 'visible' : ''}">${escapeHtml(ann.teamReply || '')}</div>
-                        <div class="annotation-controls">
-                            ${ownerMode ? '<button class="edit-btn">Edit</button><button class="remove-btn">Remove</button>' : ''}
-                            <input type="checkbox" class="completed-cb" ${ann.completed ? 'checked' : ''}>
-                            <label>Completed</label>
-                            <input type="text" class="team-reply-input" placeholder="Team reply" value="${escapeHtml(ann.teamReply || '')}">
-                        </div>
-                    </div>`;
-                if (ownerMode) {
+                    `;
+
+                    const colourBar = row.querySelector('.annotation-colour-bar');
+                    if (colourBar) colourBar.className = 'annotation-colour-bar ' + (ann.type || 'delete');
+
+                    const replyIcon = row.querySelector('.reply-icon');
+                    if (replyIcon) {
+                        replyIcon.addEventListener('click', (e) => { e.stopPropagation(); row.querySelector('.annotation-reply-block').classList.toggle('visible'); });
+                    }
+
                     row.querySelector('.edit-btn').addEventListener('click', (e) => { e.stopPropagation(); openDetailPanel(ann.id); });
                     row.querySelector('.remove-btn').addEventListener('click', (e) => { e.stopPropagation(); removeAnnotation(ann.id); });
-                }
-                row.querySelector('.completed-cb').addEventListener('change', (e) => { ann.completed = e.target.checked; markStateMutation(); renderSidebar(); });
-                row.querySelector('.team-reply-input').addEventListener('input', (e) => { ann.teamReply = e.target.value; markStateMutation(); });
-                listEl.appendChild(row);
+                    row.querySelector('.completed-cb').addEventListener('change', (e) => { e.stopPropagation(); ann.completed = e.target.checked; renderSidebar(); });
+
+                    row.addEventListener('click', (e) => {
+                        if (e.target.closest('.annotation-controls') || e.target.closest('.reply-icon')) return;
+                        highlightAnnotationOnTimeline(ann.id);
+                        scrollTimelineToAnnotation(ann);
+                        row.classList.add('highlighted');
+                        row.classList.add('pulsing');
+                        listEl.querySelectorAll('.annotation-row.highlighted').forEach(r => { if (r !== row) r.classList.remove('highlighted'); });
+                        setTimeout(() => row.classList.remove('pulsing'), 600);
+                        row.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+                    });
+
+                    listEl.appendChild(row);
+                });
             });
         }
 
@@ -1045,15 +1828,13 @@
         }
 
         function removeAnnotation(id) {
-            const idx = state.annotations.findIndex(a => a.id === id);
+            const idx = deleteAnnotations.findIndex(a => a.id === id);
             if (idx === -1) return;
-            state.annotations.splice(idx, 1);
-            syncDeleteAnnotations();
+            deleteAnnotations.splice(idx, 1);
             updateTimelineToCurrentDuration();
             updateDurationDisplay();
             renderSidebar();
             clearTimelineHighlight();
-            markStateMutation();
         }
 
         function highlightAnnotationOnTimeline(annotationId) {
@@ -1074,8 +1855,7 @@
             const timelineBar = document.getElementById('timelineBar');
             if (!scrollEl || !timelineBar || !timelineData.totalSeconds) return;
             const actualWidth = timelineData.isExpanded ? getDisplayWidth() : (container.getBoundingClientRect().width - 40);
-            const anchorTime = annotation.inTime ?? annotation.atTime ?? 0;
-            const compressedX = timeToCompressedPixel(anchorTime, timelineData.totalSeconds, actualWidth);
+            const compressedX = timeToCompressedPixel(annotation.inTime, timelineData.totalSeconds, actualWidth);
             const scrollTarget = timelineData.isExpanded ? compressedX - scrollEl.clientWidth / 2 : 0;
             scrollEl.scrollLeft = Math.max(0, Math.min(scrollTarget, scrollEl.scrollWidth - scrollEl.clientWidth));
         }
@@ -1108,12 +1888,12 @@
             const barRect = timelineBar.getBoundingClientRect();
 
             if (clientY < barRect.top || clientY > barRect.bottom) return null;
-            const timelineWidth = parseFloat(timelineBar.style.width) || timelineBar.offsetWidth;
+            if (clientX < viewportRect.left || clientX > viewportRect.right) return null;
+
             const scrollLeft = timelineData.isExpanded ? scrollEl.scrollLeft : 0;
-            const relativeBarX = clientX - barRect.left;
-            const clampedBarX = Math.max(0, Math.min(relativeBarX, timelineWidth));
-            const contentX = timelineData.isExpanded ? (scrollLeft + clampedBarX) : clampedBarX;
             const viewportX = clientX - viewportRect.left;
+            const contentX = scrollLeft + viewportX;
+            const timelineWidth = parseFloat(timelineBar.style.width) || timelineBar.offsetWidth;
 
             return { viewportX, contentX, timelineWidth };
         }
@@ -1123,12 +1903,10 @@
             const scrollEl = document.getElementById('timelineScrollable');
             const timelineBar = document.getElementById('timelineBar');
             if (!scrollEl || !timelineBar) return null;
-            const barRect = timelineBar.getBoundingClientRect();
+            const viewportRect = scrollEl.getBoundingClientRect();
             const scrollLeft = timelineData.isExpanded ? scrollEl.scrollLeft : 0;
+            const contentX = scrollLeft + (clientX - viewportRect.left);
             const timelineWidth = parseFloat(timelineBar.style.width) || timelineBar.offsetWidth;
-            const relativeBarX = clientX - barRect.left;
-            const clampedBarX = Math.max(0, Math.min(relativeBarX, timelineWidth));
-            const contentX = timelineData.isExpanded ? (scrollLeft + clampedBarX) : clampedBarX;
             return { contentX, timelineWidth };
         }
 
@@ -1283,9 +2061,8 @@
             renderCompressedTimelineBackground();
 
             deleteAnnotations.forEach(annotation => {
-                // Collapsed redline at resume boundary (post-delete)
-                const resumeTime = Math.min(timelineData.totalSeconds, annotation.outTime + 1);
-                const inX = timeToCompressedPixel(resumeTime, totalSeconds, actualWidth);
+                // Calculate compressed position for the in point
+                const inX = timeToCompressedPixel(annotation.inTime, totalSeconds, actualWidth);
 
                 // Create non-selectable overlay zone covering the deleted region
                 const compressedInX = timeToCompressedPixel(annotation.inTime, totalSeconds, actualWidth);
@@ -1323,23 +2100,6 @@
                     openDetailPanel(annotation.id);
                 };
                 container.appendChild(overlay);
-            });
-        }
-
-
-        function renderSwapBlocks() {
-            document.querySelectorAll('.swap-insert-block.saved').forEach(el => el.remove());
-            const timelineBar = document.getElementById('timelineBar');
-            if (!timelineBar) return;
-            const actualWidth = timelineData.isExpanded ? getDisplayWidth() : (document.getElementById('timelineContainer').getBoundingClientRect().width - 40);
-            state.annotations.filter(a => a.type === 'swap').forEach(annotation => {
-                const startX = timeToCompressedPixel(annotation.insertAtTime || 0, timelineData.totalSeconds, actualWidth);
-                const width = Math.max(6, ((annotation.outTime - annotation.inTime) / timelineData.totalSeconds) * actualWidth);
-                const block = document.createElement('div');
-                block.className = 'swap-insert-block saved';
-                block.style.left = Math.max(0, Math.min(startX, actualWidth - width)) + 'px';
-                block.style.width = width + 'px';
-                timelineBar.appendChild(block);
             });
         }
 
@@ -1464,7 +2224,6 @@
 
             renderDeletedZones();
             renderDeletedChunks();
-            renderSwapBlocks();
 
             const scrollEl = document.getElementById('timelineScrollable');
             setupMouseTracking(timelineBar, container, scrollEl, timelineData.totalSeconds, displayWidth);
@@ -1482,75 +2241,33 @@
         }
 
         function openDetailPanel(annotationId) {
-            const annotation = state.annotations.find(a => a.id === annotationId);
+            const annotation = deleteAnnotations.find(a => a.id === annotationId);
             if (!annotation) return;
 
-            document.getElementById('detailInTimecode').textContent = annotation.inTimecode || annotation.atTimecode || '—';
-            document.getElementById('detailOutTimecode').textContent = annotation.outTimecode || annotation.insertAtTimecode || '—';
-            document.getElementById('detailComment').textContent = annotation.comment || '';
-            document.getElementById('detailCompleted').checked = !!annotation.completed;
+            document.getElementById('detailInTimecode').textContent = annotation.inTimecode;
+            document.getElementById('detailOutTimecode').textContent = annotation.outTimecode;
+            document.getElementById('detailComment').textContent = annotation.comment;
+            document.getElementById('detailCompleted').checked = annotation.completed;
             document.getElementById('detailTeamReply').value = annotation.teamReply || '';
+
+            // Store current annotation ID
             document.getElementById('detailPanel').dataset.annotationId = annotationId;
+
             document.getElementById('detailPanel').style.display = 'block';
         }
 
         function closeDetailPanel() {
             const panel = document.getElementById('detailPanel');
             const annotationId = parseInt(panel.dataset.annotationId);
-            const annotation = state.annotations.find(a => a.id === annotationId);
+            const annotation = deleteAnnotations.find(a => a.id === annotationId);
 
             if (annotation) {
                 annotation.completed = document.getElementById('detailCompleted').checked;
                 annotation.teamReply = document.getElementById('detailTeamReply').value;
-                markStateMutation();
             }
 
             panel.style.display = 'none';
             renderSidebar();
-        }
-
-
-        function exportTextFromList(list) {
-            return list.map(ann => {
-                const header = ann.type === 'delete' ? `[DELETE] ${ann.inTimecode}–${ann.outTimecode}` :
-                    ann.type === 'swap' ? `[SWAP] ${ann.inTimecode}–${ann.outTimecode} -> insert @ ${ann.insertAtTimecode}` :
-                    `[${ann.type.toUpperCase()}] AT ${ann.atTimecode}`;
-                const lines = [header + (ann.comment ? ` ${ann.comment}` : '')];
-                if (ann.completed) lines.push('Completed: Yes');
-                if (ann.teamReply) lines.push(`Team Reply: ${ann.teamReply}`);
-                return lines.join('\n');
-            }).join('\n\n');
-        }
-
-        function downloadTextFile(name, text) {
-            const blob = new Blob([text], { type: 'text/plain;charset=utf-8' });
-            const a = document.createElement('a');
-            a.href = URL.createObjectURL(blob);
-            a.download = name;
-            a.click();
-            URL.revokeObjectURL(a.href);
-        }
-
-        function exportTextSummary() {
-            const all = [...state.annotations].sort((a,b)=>(a.inTime??a.atTime??0)-(b.inTime??b.atTime??0));
-            downloadTextFile('timeline_summary_all.txt', exportTextFromList(all));
-        }
-
-        function exportFilteredText() {
-            downloadTextFile(`timeline_summary_${annotationFilter}.txt`, exportTextFromList(getFilteredAnnotations()));
-        }
-
-        function exportViewerHtml() {
-            const clone = document.documentElement.outerHTML;
-            const stateScript = `<script>window.__VIEWER_STATE__=${JSON.stringify(state)};<\/script>`;
-            const viewerScript = `<script>window.__VIEWER_MODE__=true;<\/script>`;
-            const html = '<!DOCTYPE html>' + clone.replace('<head>', `<head>${stateScript}${viewerScript}`);
-            const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
-            const a = document.createElement('a');
-            a.href = URL.createObjectURL(blob);
-            a.download = 'timeline_viewer.html';
-            a.click();
-            URL.revokeObjectURL(a.href);
         }
 
         // Filter bar
@@ -1582,31 +2299,6 @@
                 drawTimeline();
             }
         });
-    
-
-        document.getElementById('rangeMode').addEventListener('change', function() {
-            const isSwap = this.value === 'swap';
-            document.getElementById('rangePrimaryBtn').textContent = isSwap && (!pendingRangeData || pendingRangeData.insertAtTime === null) ? 'Next' : 'Save';
-        });
-
-        window.addEventListener('DOMContentLoaded', function() {
-            ownerMode = !window.__VIEWER_MODE__;
-            if (window.__VIEWER_STATE__) state = window.__VIEWER_STATE__;
-            if (ownerMode) loadState();
-            scheduleAutoSave();
-            document.getElementById('viewerModeBadge').style.display = ownerMode ? 'none' : 'block';
-            if (state.totalSeconds) {
-                document.getElementById('duration').value = formatTime(state.totalSeconds);
-                drawTimeline();
-                timelineData.isExpanded = state.isExpanded !== false;
-                syncDeleteAnnotations();
-                applyTimelineView();
-                updateTimelineToCurrentDuration();
-                updateDurationDisplay();
-                renderSidebar();
-            }
-        });
-
     </script>
 </body>
 </html>
