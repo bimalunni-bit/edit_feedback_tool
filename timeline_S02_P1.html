@@ -1,0 +1,681 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Video Timeline Editor</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: Arial, sans-serif;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+
+        .controls {
+            margin-bottom: 20px;
+            display: flex;
+            gap: 15px;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+
+        .control-group {
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+        }
+
+        label {
+            font-size: 14px;
+            font-weight: bold;
+            color: #333;
+        }
+
+        input {
+            padding: 8px 12px;
+            font-size: 14px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            width: 200px;
+        }
+
+        button {
+            padding: 10px 20px;
+            font-size: 14px;
+            background-color: #007bff;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            height: fit-content;
+            margin-top: 20px;
+        }
+
+        button:hover {
+            background-color: #0056b3;
+        }
+
+        button:active {
+            background-color: #004085;
+        }
+
+        .timeline-container {
+            margin-top: 30px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            background-color: white;
+            overflow-x: auto;
+            overflow-y: hidden;
+            padding: 20px;
+        }
+
+        .timeline-wrapper {
+            position: relative;
+            min-width: 100%;
+        }
+
+        .timeline-bar-container {
+            position: relative;
+            margin-bottom: 30px;
+        }
+
+        .cursor-timecode {
+            position: absolute;
+            top: -25px;
+            left: 0;
+            font-size: 12px;
+            font-weight: bold;
+            color: #007bff;
+            background-color: rgba(255, 255, 255, 0.9);
+            padding: 2px 6px;
+            border-radius: 3px;
+            pointer-events: none;
+            transform: translateX(-50%);
+            white-space: nowrap;
+            display: none;
+        }
+
+        .cursor-line {
+            position: absolute;
+            top: 0;
+            width: 2px;
+            height: 60px;
+            background-color: #007bff;
+            pointer-events: none;
+            display: none;
+            z-index: 10;
+        }
+
+        .timeline-bar {
+            height: 60px;
+            background: linear-gradient(to right, #e0e0e0, #f0f0f0);
+            border: 2px solid #333;
+            border-radius: 4px;
+            position: relative;
+            cursor: crosshair;
+        }
+
+        .time-markers {
+            position: relative;
+            height: 30px;
+            border-top: 1px solid #ccc;
+        }
+
+        .marker {
+            position: absolute;
+            top: 0;
+            transform: translateX(-50%);
+            text-align: center;
+        }
+
+        .marker-line {
+            width: 1px;
+            height: 10px;
+            background-color: #666;
+            margin: 0 auto;
+        }
+
+        .marker-label {
+            font-size: 11px;
+            color: #333;
+            margin-top: 2px;
+            white-space: nowrap;
+        }
+
+        .segment-marker {
+            position: absolute;
+            top: 0;
+            width: 3px;
+            height: 60px;
+            background-color: #ff6b6b;
+            cursor: pointer;
+            z-index: 20;
+            transform: translateX(-50%);
+        }
+
+        .segment-marker:hover {
+            background-color: #ff5252;
+            width: 4px;
+        }
+
+        .segment-label {
+            position: absolute;
+            top: -20px;
+            left: 50%;
+            transform: translateX(-50%);
+            font-size: 11px;
+            font-weight: bold;
+            color: #ff6b6b;
+            background-color: rgba(255, 255, 255, 0.95);
+            padding: 2px 6px;
+            border-radius: 3px;
+            white-space: nowrap;
+            pointer-events: none;
+            border: 1px solid #ff6b6b;
+        }
+    </style>
+</head>
+<body>
+    <div class="controls">
+        <div class="control-group">
+            <label for="projectName">Project Name:</label>
+            <input type="text" id="projectName" placeholder="Enter project name">
+        </div>
+        <div class="control-group">
+            <label for="duration">Total Duration (hh:mm:ss):</label>
+            <input type="text" id="duration" placeholder="00:00:00" pattern="\d{2}:\d{2}:\d{2}">
+        </div>
+        <button onclick="drawTimeline()">Draw Timeline</button>
+    </div>
+
+    <div id="timelineContainer" class="timeline-container" style="display: none;">
+        <div class="timeline-wrapper">
+            <div class="timeline-bar-container">
+                <div id="cursorTimecode" class="cursor-timecode">00:00:00</div>
+                <div id="cursorLine" class="cursor-line"></div>
+                <div id="segmentMarkersContainer"></div>
+                <div id="timelineBar" class="timeline-bar"></div>
+            </div>
+            <div id="timeMarkers" class="time-markers"></div>
+        </div>
+    </div>
+
+    <script>
+        let timelineData = {
+            totalSeconds: 0,
+            actualWidth: 0
+        };
+
+        let segments = [];
+        let segmentCounter = 1;
+
+        function parseDuration(durationStr) {
+            const parts = durationStr.split(':').map(Number);
+            if (parts.length !== 3 || parts.some(isNaN)) {
+                throw new Error('Invalid duration format. Use hh:mm:ss');
+            }
+            return parts[0] * 3600 + parts[1] * 60 + parts[2];
+        }
+
+        function formatTime(seconds) {
+            const h = Math.floor(seconds / 3600);
+            const m = Math.floor((seconds % 3600) / 60);
+            const s = seconds % 60;
+            return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+        }
+
+        function calculateMarkerInterval(totalSeconds) {
+            // Calculate appropriate interval based on total duration
+            // Aim for roughly 10-20 markers visible at a time
+            const pixelsPerSecond = 10; // Base scale: 10 pixels per second
+            const targetMarkers = 15;
+            const baseInterval = totalSeconds / targetMarkers;
+            
+            // Round to nice intervals: 1s, 5s, 10s, 30s, 1m, 5m, 10m, 30m, 1h
+            const intervals = [1, 5, 10, 30, 60, 300, 600, 1800, 3600];
+            for (let interval of intervals) {
+                if (interval >= baseInterval) {
+                    return interval;
+                }
+            }
+            return intervals[intervals.length - 1];
+        }
+
+        function drawTimeline() {
+            const durationInput = document.getElementById('duration').value.trim();
+            const container = document.getElementById('timelineContainer');
+            const timelineBar = document.getElementById('timelineBar');
+            const timeMarkers = document.getElementById('timeMarkers');
+
+            if (!durationInput) {
+                alert('Please enter a duration');
+                return;
+            }
+
+            try {
+                const totalSeconds = parseDuration(durationInput);
+                if (totalSeconds <= 0) {
+                    alert('Duration must be greater than 0');
+                    return;
+                }
+
+                // Calculate scale: 10 pixels per second
+                const pixelsPerSecond = 10;
+                const totalWidth = totalSeconds * pixelsPerSecond;
+                const minWidth = 800; // Minimum width for short durations
+                const actualWidth = Math.max(totalWidth, minWidth);
+
+                // Set timeline bar width
+                timelineBar.style.width = actualWidth + 'px';
+
+                // Store timeline data for mouse tracking
+                timelineData.totalSeconds = totalSeconds;
+                timelineData.actualWidth = actualWidth;
+
+                // Setup mouse tracking
+                setupMouseTracking(timelineBar, container, totalSeconds, actualWidth);
+
+                // Setup segment markers
+                setupSegmentMarkers(timelineBar, totalSeconds, actualWidth);
+
+                // Setup auto-scrolling
+                setupAutoScroll(container);
+
+                // Reset segments when redrawing timeline
+                segments = [];
+                segmentCounter = 1;
+                document.getElementById('segmentMarkersContainer').innerHTML = '';
+
+                // Calculate marker interval
+                const markerInterval = calculateMarkerInterval(totalSeconds);
+                const numMarkers = Math.floor(totalSeconds / markerInterval) + 1;
+
+                // Clear existing markers
+                timeMarkers.innerHTML = '';
+                timeMarkers.style.width = actualWidth + 'px';
+
+                // Create markers
+                for (let i = 0; i <= numMarkers; i++) {
+                    const time = i * markerInterval;
+                    if (time > totalSeconds) break;
+
+                    const marker = document.createElement('div');
+                    marker.className = 'marker';
+                    const position = (time / totalSeconds) * actualWidth;
+                    marker.style.left = position + 'px';
+
+                    const line = document.createElement('div');
+                    line.className = 'marker-line';
+
+                    const label = document.createElement('div');
+                    label.className = 'marker-label';
+                    label.textContent = formatTime(time);
+
+                    marker.appendChild(line);
+                    marker.appendChild(label);
+                    timeMarkers.appendChild(marker);
+                }
+
+                // Always add a marker at the exact end time if it's not already included
+                const lastMarkerTime = Math.floor(totalSeconds / markerInterval) * markerInterval;
+                if (lastMarkerTime < totalSeconds) {
+                    const marker = document.createElement('div');
+                    marker.className = 'marker';
+                    marker.style.left = actualWidth + 'px'; // Position at the very end
+
+                    const line = document.createElement('div');
+                    line.className = 'marker-line';
+
+                    const label = document.createElement('div');
+                    label.className = 'marker-label';
+                    label.textContent = formatTime(totalSeconds);
+
+                    marker.appendChild(line);
+                    marker.appendChild(label);
+                    timeMarkers.appendChild(marker);
+                }
+
+                // Show container
+                container.style.display = 'block';
+            } catch (error) {
+                alert(error.message);
+            }
+        }
+
+        function setupMouseTracking(timelineBar, container, totalSeconds, actualWidth) {
+            const cursorLine = document.getElementById('cursorLine');
+            const cursorTimecode = document.getElementById('cursorTimecode');
+            let lastMouseX = null;
+            let lastMouseY = null;
+            let cursorUpdateAnimationId = null;
+
+            // Remove existing listeners if they exist
+            if (timelineBar._mouseMoveHandler) {
+                timelineBar.removeEventListener('mousemove', timelineBar._mouseMoveHandler);
+                timelineBar.removeEventListener('mouseleave', timelineBar._mouseLeaveHandler);
+            }
+            if (container._cursorMoveHandler) {
+                container.removeEventListener('mousemove', container._cursorMoveHandler);
+                container.removeEventListener('mouseleave', container._cursorLeaveHandler);
+            }
+            if (container._cursorScrollHandler) {
+                container.removeEventListener('scroll', container._cursorScrollHandler);
+            }
+
+            // Function to update cursor position based on stored mouse coordinates
+            function updateCursorPosition() {
+                if (lastMouseX === null || lastMouseY === null) {
+                    cursorLine.style.display = 'none';
+                    cursorTimecode.style.display = 'none';
+                    return;
+                }
+
+                const containerRect = container.getBoundingClientRect();
+                const timelineRect = timelineBar.getBoundingClientRect();
+                
+                // Check if mouse is still over the timeline area
+                if (lastMouseY < timelineRect.top || lastMouseY > timelineRect.bottom ||
+                    lastMouseX < containerRect.left || lastMouseX > containerRect.right) {
+                    cursorLine.style.display = 'none';
+                    cursorTimecode.style.display = 'none';
+                    return;
+                }
+                
+                // Calculate mouse position relative to the container's visible area
+                const mouseXInContainer = lastMouseX - containerRect.left;
+                
+                // Calculate the actual position on the timeline bar accounting for scroll
+                const scrollLeft = container.scrollLeft;
+                const timelineX = scrollLeft + mouseXInContainer;
+                
+                // Clamp to timeline bounds
+                const clampedX = Math.max(0, Math.min(timelineX, actualWidth));
+                
+                // Calculate timecode
+                const timeSeconds = (clampedX / actualWidth) * totalSeconds;
+                const timecode = formatTime(Math.floor(timeSeconds));
+                
+                // Position cursor line at the absolute position on the timeline bar
+                cursorLine.style.left = clampedX + 'px';
+                cursorLine.style.display = 'block';
+                
+                cursorTimecode.textContent = timecode;
+                cursorTimecode.style.left = clampedX + 'px';
+                cursorTimecode.style.display = 'block';
+            }
+
+            // Continuous update function for smooth tracking during scroll
+            function continuousUpdate() {
+                updateCursorPosition();
+                cursorUpdateAnimationId = requestAnimationFrame(continuousUpdate);
+            }
+
+            // Track mouse on timeline bar
+            timelineBar._mouseMoveHandler = function(e) {
+                lastMouseX = e.clientX;
+                lastMouseY = e.clientY;
+                updateCursorPosition();
+            };
+
+            timelineBar._mouseLeaveHandler = function() {
+                lastMouseX = null;
+                lastMouseY = null;
+                cursorLine.style.display = 'none';
+                cursorTimecode.style.display = 'none';
+                if (cursorUpdateAnimationId) {
+                    cancelAnimationFrame(cursorUpdateAnimationId);
+                    cursorUpdateAnimationId = null;
+                }
+            };
+
+            // Also track mouse on container to handle edge scrolling scenarios
+            container._cursorMoveHandler = function(e) {
+                lastMouseX = e.clientX;
+                lastMouseY = e.clientY;
+                const containerRect = container.getBoundingClientRect();
+                const timelineRect = timelineBar.getBoundingClientRect();
+                
+                // Only update if mouse is over the timeline bar area
+                if (e.clientY >= timelineRect.top && e.clientY <= timelineRect.bottom &&
+                    e.clientX >= containerRect.left && e.clientX <= containerRect.right) {
+                    updateCursorPosition();
+                    // Start continuous updates if not already running
+                    if (!cursorUpdateAnimationId) {
+                        continuousUpdate();
+                    }
+                }
+            };
+
+            container._cursorLeaveHandler = function() {
+                lastMouseX = null;
+                lastMouseY = null;
+                cursorLine.style.display = 'none';
+                cursorTimecode.style.display = 'none';
+                if (cursorUpdateAnimationId) {
+                    cancelAnimationFrame(cursorUpdateAnimationId);
+                    cursorUpdateAnimationId = null;
+                }
+            };
+
+            // Update cursor position during scroll
+            container._cursorScrollHandler = function() {
+                if (lastMouseX !== null && lastMouseY !== null) {
+                    // Start continuous updates during scroll if not already running
+                    if (!cursorUpdateAnimationId) {
+                        continuousUpdate();
+                    }
+                }
+            };
+
+            // Add listeners
+            timelineBar.addEventListener('mousemove', timelineBar._mouseMoveHandler);
+            timelineBar.addEventListener('mouseleave', timelineBar._mouseLeaveHandler);
+            container.addEventListener('mousemove', container._cursorMoveHandler);
+            container.addEventListener('mouseleave', container._cursorLeaveHandler);
+            container.addEventListener('scroll', container._cursorScrollHandler);
+        }
+
+        function setupSegmentMarkers(timelineBar, totalSeconds, actualWidth) {
+            const segmentContainer = document.getElementById('segmentMarkersContainer');
+            segmentContainer.style.position = 'absolute';
+            segmentContainer.style.top = '0';
+            segmentContainer.style.left = '0';
+            segmentContainer.style.width = actualWidth + 'px';
+            segmentContainer.style.height = '60px';
+            segmentContainer.style.pointerEvents = 'none';
+
+            // Remove existing listeners if they exist
+            if (timelineBar._rightClickHandler) {
+                timelineBar.removeEventListener('contextmenu', timelineBar._rightClickHandler);
+            }
+
+            // Handle right-click to add segment
+            timelineBar._rightClickHandler = function(e) {
+                e.preventDefault();
+                const rect = timelineBar.getBoundingClientRect();
+                const x = e.clientX - rect.left;
+                const clampedX = Math.max(0, Math.min(x, actualWidth));
+                
+                // Calculate time at this position
+                const timeSeconds = (clampedX / actualWidth) * totalSeconds;
+                
+                // Generate segment name
+                const segmentName = `Seg ${String(segmentCounter).padStart(2, '0')}`;
+                
+                // Add segment
+                addSegmentMarker(clampedX, segmentName, timeSeconds, totalSeconds, actualWidth);
+                segmentCounter++;
+            };
+
+            timelineBar.addEventListener('contextmenu', timelineBar._rightClickHandler);
+        }
+
+        function addSegmentMarker(x, name, timeSeconds, totalSeconds, actualWidth) {
+            const segmentContainer = document.getElementById('segmentMarkersContainer');
+            
+            // Create segment marker element
+            const marker = document.createElement('div');
+            marker.className = 'segment-marker';
+            marker.style.left = x + 'px';
+            marker.dataset.x = x;
+            marker.dataset.name = name;
+            marker.dataset.timeSeconds = timeSeconds;
+            
+            // Create label
+            const label = document.createElement('div');
+            label.className = 'segment-label';
+            label.textContent = name;
+            marker.appendChild(label);
+            
+            // Add click handler to delete
+            marker.addEventListener('click', function(e) {
+                e.stopPropagation();
+                deleteSegmentMarker(marker);
+            });
+            
+            // Make marker clickable
+            marker.style.pointerEvents = 'auto';
+            
+            segmentContainer.appendChild(marker);
+            
+            // Store segment data
+            segments.push({
+                x: x,
+                name: name,
+                timeSeconds: timeSeconds,
+                element: marker
+            });
+        }
+
+        function deleteSegmentMarker(marker) {
+            const name = marker.dataset.name;
+            const index = segments.findIndex(seg => seg.element === marker);
+            
+            if (index !== -1) {
+                segments.splice(index, 1);
+                marker.remove();
+            }
+        }
+
+        function setupAutoScroll(container) {
+            const edgeZone = 60; // pixels from edge
+            let scrollAnimationId = null;
+            let isScrolling = false;
+
+            // Remove existing listeners if they exist
+            if (container._autoScrollMoveHandler) {
+                container.removeEventListener('mousemove', container._autoScrollMoveHandler);
+                container.removeEventListener('mouseleave', container._autoScrollLeaveHandler);
+            }
+
+            function calculateScrollSpeed(distanceFromEdge) {
+                // Speed increases as distance decreases (closer to edge = faster)
+                // Max speed when at edge (distance = 0), no speed at 60px
+                const normalizedDistance = Math.max(0, Math.min(1, distanceFromEdge / edgeZone));
+                const speed = (1 - normalizedDistance) * 15; // Max speed of 15 pixels per frame
+                return speed;
+            }
+
+            function startScrolling(direction) {
+                if (isScrolling) return;
+                isScrolling = true;
+
+                function scroll() {
+                    if (!isScrolling) {
+                        scrollAnimationId = null;
+                        return;
+                    }
+
+                    const currentScroll = container.scrollLeft;
+                    const maxScroll = container.scrollWidth - container.clientWidth;
+                    
+                    // Check if we can still scroll in this direction
+                    if (direction === 'left' && currentScroll > 0) {
+                        const rect = container.getBoundingClientRect();
+                        const mouseX = container._lastMouseX - rect.left;
+                        const distanceFromEdge = mouseX;
+                        
+                        if (distanceFromEdge < edgeZone) {
+                            const speed = calculateScrollSpeed(distanceFromEdge);
+                            container.scrollLeft = Math.max(0, currentScroll - speed);
+                            scrollAnimationId = requestAnimationFrame(scroll);
+                        } else {
+                            isScrolling = false;
+                            scrollAnimationId = null;
+                        }
+                    } else if (direction === 'right' && currentScroll < maxScroll) {
+                        const rect = container.getBoundingClientRect();
+                        const mouseX = container._lastMouseX - rect.left;
+                        const distanceFromEdge = container.clientWidth - mouseX;
+                        
+                        if (distanceFromEdge < edgeZone) {
+                            const speed = calculateScrollSpeed(distanceFromEdge);
+                            container.scrollLeft = Math.min(maxScroll, currentScroll + speed);
+                            scrollAnimationId = requestAnimationFrame(scroll);
+                        } else {
+                            isScrolling = false;
+                            scrollAnimationId = null;
+                        }
+                    } else {
+                        isScrolling = false;
+                        scrollAnimationId = null;
+                    }
+                }
+
+                scrollAnimationId = requestAnimationFrame(scroll);
+            }
+
+            function stopScrolling() {
+                isScrolling = false;
+                if (scrollAnimationId) {
+                    cancelAnimationFrame(scrollAnimationId);
+                    scrollAnimationId = null;
+                }
+            }
+
+            container._autoScrollMoveHandler = function(e) {
+                const rect = container.getBoundingClientRect();
+                const mouseX = e.clientX - rect.left;
+                container._lastMouseX = e.clientX;
+                
+                const distanceFromLeft = mouseX;
+                const distanceFromRight = container.clientWidth - mouseX;
+                
+                // Check if mouse is in edge zones
+                if (distanceFromLeft < edgeZone && distanceFromLeft >= 0) {
+                    // Near left edge - scroll left
+                    stopScrolling();
+                    startScrolling('left');
+                } else if (distanceFromRight < edgeZone && distanceFromRight >= 0) {
+                    // Near right edge - scroll right
+                    stopScrolling();
+                    startScrolling('right');
+                } else {
+                    // Not in edge zone - stop scrolling
+                    stopScrolling();
+                }
+            };
+
+            container._autoScrollLeaveHandler = function() {
+                stopScrolling();
+            };
+
+            container.addEventListener('mousemove', container._autoScrollMoveHandler);
+            container.addEventListener('mouseleave', container._autoScrollLeaveHandler);
+        }
+
+        // Allow Enter key to trigger draw
+        document.getElementById('duration').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                drawTimeline();
+            }
+        });
+    </script>
+</body>
+</html>

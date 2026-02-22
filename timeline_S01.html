@@ -1,0 +1,354 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Video Timeline Editor</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: Arial, sans-serif;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+
+        .controls {
+            margin-bottom: 20px;
+            display: flex;
+            gap: 15px;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+
+        .control-group {
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+        }
+
+        label {
+            font-size: 14px;
+            font-weight: bold;
+            color: #333;
+        }
+
+        input {
+            padding: 8px 12px;
+            font-size: 14px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            width: 200px;
+        }
+
+        button {
+            padding: 10px 20px;
+            font-size: 14px;
+            background-color: #007bff;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            height: fit-content;
+            margin-top: 20px;
+        }
+
+        button:hover {
+            background-color: #0056b3;
+        }
+
+        button:active {
+            background-color: #004085;
+        }
+
+        .timeline-container {
+            margin-top: 30px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            background-color: white;
+            overflow-x: auto;
+            overflow-y: hidden;
+            padding: 20px;
+        }
+
+        .timeline-wrapper {
+            position: relative;
+            min-width: 100%;
+        }
+
+        .timeline-bar-container {
+            position: relative;
+            margin-bottom: 30px;
+        }
+
+        .cursor-timecode {
+            position: absolute;
+            top: -25px;
+            left: 0;
+            font-size: 12px;
+            font-weight: bold;
+            color: #007bff;
+            background-color: rgba(255, 255, 255, 0.9);
+            padding: 2px 6px;
+            border-radius: 3px;
+            pointer-events: none;
+            transform: translateX(-50%);
+            white-space: nowrap;
+            display: none;
+        }
+
+        .cursor-line {
+            position: absolute;
+            top: 0;
+            width: 2px;
+            height: 60px;
+            background-color: #007bff;
+            pointer-events: none;
+            display: none;
+            z-index: 10;
+        }
+
+        .timeline-bar {
+            height: 60px;
+            background: linear-gradient(to right, #e0e0e0, #f0f0f0);
+            border: 2px solid #333;
+            border-radius: 4px;
+            position: relative;
+            cursor: crosshair;
+        }
+
+        .time-markers {
+            position: relative;
+            height: 30px;
+            border-top: 1px solid #ccc;
+        }
+
+        .marker {
+            position: absolute;
+            top: 0;
+            transform: translateX(-50%);
+            text-align: center;
+        }
+
+        .marker-line {
+            width: 1px;
+            height: 10px;
+            background-color: #666;
+            margin: 0 auto;
+        }
+
+        .marker-label {
+            font-size: 11px;
+            color: #333;
+            margin-top: 2px;
+            white-space: nowrap;
+        }
+    </style>
+</head>
+<body>
+    <div class="controls">
+        <div class="control-group">
+            <label for="projectName">Project Name:</label>
+            <input type="text" id="projectName" placeholder="Enter project name">
+        </div>
+        <div class="control-group">
+            <label for="duration">Total Duration (hh:mm:ss):</label>
+            <input type="text" id="duration" placeholder="00:00:00" pattern="\d{2}:\d{2}:\d{2}">
+        </div>
+        <button onclick="drawTimeline()">Draw Timeline</button>
+    </div>
+
+    <div id="timelineContainer" class="timeline-container" style="display: none;">
+        <div class="timeline-wrapper">
+            <div class="timeline-bar-container">
+                <div id="cursorTimecode" class="cursor-timecode">00:00:00</div>
+                <div id="cursorLine" class="cursor-line"></div>
+                <div id="timelineBar" class="timeline-bar"></div>
+            </div>
+            <div id="timeMarkers" class="time-markers"></div>
+        </div>
+    </div>
+
+    <script>
+        let timelineData = {
+            totalSeconds: 0,
+            actualWidth: 0
+        };
+
+        function parseDuration(durationStr) {
+            const parts = durationStr.split(':').map(Number);
+            if (parts.length !== 3 || parts.some(isNaN)) {
+                throw new Error('Invalid duration format. Use hh:mm:ss');
+            }
+            return parts[0] * 3600 + parts[1] * 60 + parts[2];
+        }
+
+        function formatTime(seconds) {
+            const h = Math.floor(seconds / 3600);
+            const m = Math.floor((seconds % 3600) / 60);
+            const s = seconds % 60;
+            return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+        }
+
+        function calculateMarkerInterval(totalSeconds) {
+            // Calculate appropriate interval based on total duration
+            // Aim for roughly 10-20 markers visible at a time
+            const pixelsPerSecond = 10; // Base scale: 10 pixels per second
+            const targetMarkers = 15;
+            const baseInterval = totalSeconds / targetMarkers;
+            
+            // Round to nice intervals: 1s, 5s, 10s, 30s, 1m, 5m, 10m, 30m, 1h
+            const intervals = [1, 5, 10, 30, 60, 300, 600, 1800, 3600];
+            for (let interval of intervals) {
+                if (interval >= baseInterval) {
+                    return interval;
+                }
+            }
+            return intervals[intervals.length - 1];
+        }
+
+        function drawTimeline() {
+            const durationInput = document.getElementById('duration').value.trim();
+            const container = document.getElementById('timelineContainer');
+            const timelineBar = document.getElementById('timelineBar');
+            const timeMarkers = document.getElementById('timeMarkers');
+
+            if (!durationInput) {
+                alert('Please enter a duration');
+                return;
+            }
+
+            try {
+                const totalSeconds = parseDuration(durationInput);
+                if (totalSeconds <= 0) {
+                    alert('Duration must be greater than 0');
+                    return;
+                }
+
+                // Calculate scale: 10 pixels per second
+                const pixelsPerSecond = 10;
+                const totalWidth = totalSeconds * pixelsPerSecond;
+                const minWidth = 800; // Minimum width for short durations
+                const actualWidth = Math.max(totalWidth, minWidth);
+
+                // Set timeline bar width
+                timelineBar.style.width = actualWidth + 'px';
+
+                // Store timeline data for mouse tracking
+                timelineData.totalSeconds = totalSeconds;
+                timelineData.actualWidth = actualWidth;
+
+                // Setup mouse tracking
+                setupMouseTracking(timelineBar, totalSeconds, actualWidth);
+
+                // Calculate marker interval
+                const markerInterval = calculateMarkerInterval(totalSeconds);
+                const numMarkers = Math.floor(totalSeconds / markerInterval) + 1;
+
+                // Clear existing markers
+                timeMarkers.innerHTML = '';
+                timeMarkers.style.width = actualWidth + 'px';
+
+                // Create markers
+                for (let i = 0; i <= numMarkers; i++) {
+                    const time = i * markerInterval;
+                    if (time > totalSeconds) break;
+
+                    const marker = document.createElement('div');
+                    marker.className = 'marker';
+                    const position = (time / totalSeconds) * actualWidth;
+                    marker.style.left = position + 'px';
+
+                    const line = document.createElement('div');
+                    line.className = 'marker-line';
+
+                    const label = document.createElement('div');
+                    label.className = 'marker-label';
+                    label.textContent = formatTime(time);
+
+                    marker.appendChild(line);
+                    marker.appendChild(label);
+                    timeMarkers.appendChild(marker);
+                }
+
+                // Always add a marker at the exact end time if it's not already included
+                const lastMarkerTime = Math.floor(totalSeconds / markerInterval) * markerInterval;
+                if (lastMarkerTime < totalSeconds) {
+                    const marker = document.createElement('div');
+                    marker.className = 'marker';
+                    marker.style.left = actualWidth + 'px'; // Position at the very end
+
+                    const line = document.createElement('div');
+                    line.className = 'marker-line';
+
+                    const label = document.createElement('div');
+                    label.className = 'marker-label';
+                    label.textContent = formatTime(totalSeconds);
+
+                    marker.appendChild(line);
+                    marker.appendChild(label);
+                    timeMarkers.appendChild(marker);
+                }
+
+                // Show container
+                container.style.display = 'block';
+            } catch (error) {
+                alert(error.message);
+            }
+        }
+
+        function setupMouseTracking(timelineBar, totalSeconds, actualWidth) {
+            const cursorLine = document.getElementById('cursorLine');
+            const cursorTimecode = document.getElementById('cursorTimecode');
+
+            // Remove existing listeners if they exist
+            if (timelineBar._mouseMoveHandler) {
+                timelineBar.removeEventListener('mousemove', timelineBar._mouseMoveHandler);
+                timelineBar.removeEventListener('mouseleave', timelineBar._mouseLeaveHandler);
+            }
+
+            // Create new handlers
+            timelineBar._mouseMoveHandler = function(e) {
+                const rect = timelineBar.getBoundingClientRect();
+                const x = e.clientX - rect.left;
+                
+                // Clamp x to the timeline bounds
+                const clampedX = Math.max(0, Math.min(x, actualWidth));
+                
+                // Calculate timecode
+                const timeSeconds = (clampedX / actualWidth) * totalSeconds;
+                const timecode = formatTime(Math.floor(timeSeconds));
+                
+                // Update cursor line position
+                cursorLine.style.left = clampedX + 'px';
+                cursorLine.style.display = 'block';
+                
+                // Update timecode display
+                cursorTimecode.textContent = timecode;
+                cursorTimecode.style.left = clampedX + 'px';
+                cursorTimecode.style.display = 'block';
+            };
+
+            timelineBar._mouseLeaveHandler = function() {
+                cursorLine.style.display = 'none';
+                cursorTimecode.style.display = 'none';
+            };
+
+            // Add new listeners
+            timelineBar.addEventListener('mousemove', timelineBar._mouseMoveHandler);
+            timelineBar.addEventListener('mouseleave', timelineBar._mouseLeaveHandler);
+        }
+
+        // Allow Enter key to trigger draw
+        document.getElementById('duration').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                drawTimeline();
+            }
+        });
+    </script>
+</body>
+</html>
